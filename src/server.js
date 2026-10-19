@@ -386,7 +386,27 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: 'Server error. Check backend logs.' });
 });
 
+async function ensureCollectionExists(model) {
+  // A fresh Atlas database may not have created this collection yet.
+  // Check first so this also works safely when the collection already exists.
+  const existing = await mongoose.connection.db
+    .listCollections({ name: model.collection.collectionName }, { nameOnly: true })
+    .hasNext();
+
+  if (!existing) {
+    await model.createCollection();
+    console.log(`Created collection: ${model.collection.collectionName}`);
+  }
+}
+
 async function migrateUserIndexes() {
+  // Ensure collections exist before requesting their indexes. On a brand-new
+  // database, User.collection.indexes() otherwise fails with "ns does not exist".
+  await ensureCollectionExists(User);
+  await ensureCollectionExists(Attendance);
+  await ensureCollectionExists(Ledger);
+  await ensureCollectionExists(Leave);
+
   const indexes = await User.collection.indexes();
   for (const name of ['email_1', 'phone_1']) {
     if (indexes.some(index => index.name === name)) {
